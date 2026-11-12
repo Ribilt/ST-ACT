@@ -6,10 +6,7 @@ expert described in
 > *ST-ACT: Embedding Structural and Temporal Inductive Biases into Action Experts
 > for Kinematically Consistent Robot Manipulation*
 
-This repository is an extraction of the core model: it contains only the
-decoder architecture, its configuration, and the training objective. It does not
-include a training loop, dataset loaders, robot code, image encoders, or a
-vision-language backbone. It is not wired to run any experiment out of the box.
+This repository is an extraction of the lerobot control program
 
 ## Contents
 
@@ -66,41 +63,6 @@ of `history`. Short histories are prepared with `left_pad_history(commands, h)`.
 The model consumes **commands**, not measured joint states. Normalisation of
 commands and construction of `z_t` are the caller's responsibility.
 
-## Paper-to-code map
-
-| Paper | Equation / section | Code |
-| --- | --- | --- |
-| Action expert `f_theta : (z_t, H_{t-1}) -> A_t` | Eq. 4 | `STACTModel.forward` |
-| Command history, left padding with `a_1` | Sec. 3.1 | `left_pad_history`, `cond_is_pad` analogue |
-| RoPE continuous in position, norm preserving | Sec. 3.2.1, Eq. 2 | `RoPE1D` |
-| Relative scores `Q^T R(u_s - u_t) K` | Sec. 3.2.2, Eqs. 3-5 | `RoPEMultiheadAttention` (`rope_on_key=True` in self-attention) |
-| Depth-wise smoothing `O~_d,t = sum_j G_d,j O_d,t+j` | Sec. 3.3.1, Eq. 5 | `TemporalConv1d` |
-| Normalised Gaussian kernel | Eq. 6 | `TemporalConv1d._init_lowpass_weights` |
-| Kaiming rescaling, `inf`-norm bound `sqrt(6/(D*omega))` | Eq. 7 | `TemporalConv1d._init_lowpass_weights` |
-| Smoothing before the residual addition | Sec. 3.3.1 | `STACTDecoderLayer.forward` |
-| Tied output projection `W_o = W_e^T` | Sec. 3.4.1, Eq. 8 | `STACTModel.output_projection_weight` |
-| Boundary alignment `L_align = ||a_hat_t - a_t||^2` | Sec. 3.4.2, Eq. 9 | `alignment_loss` |
-| Total loss `L = L_pred + lambda * L_align` | Sec. 3.4.2 | `stact_loss` |
-
-## Defaults
-
-`STACTConfig()` reproduces the real-world column of Table 1. `STACTConfig.libero()`
-returns the LIBERO variant.
-
-| Parameter | Real world | LIBERO |
-| --- | --- | --- |
-| History length `h` / chunk size `k` | 100 / 100 | 32 / 32 |
-| Decoder width / layers / heads | 512 / 7 / 8 | 512 / 7 / 8 |
-| Feed-forward width | 3200 | 3200 |
-| Conv1D kernel / Gaussian `sigma` | 5 / 1.5 | 5 / 0.5 |
-| Conv1D padding | replicate, 2 per side | replicate, 2 per side |
-| Alignment weight `lambda` | 0.1 | 0.1 |
-| Dropout | 0.1 | 0.1 |
-
-The paper's `L_pred` (Eq. 3) is a negative log-likelihood. As in action-chunking
-policies, this implementation realises it as an L1 regression over the chunk,
-with padded steps excluded from the average.
-
 ## Design notes and deliberate choices
 
 1. **History input is always used.** The extracted model always conditions on
@@ -137,13 +99,3 @@ training/evaluation scripts, LIBERO or SO-ARM101 integration.
 The architecture follows the ST-ACT paper. The reference code base was derived
 from LeRobot's ACT implementation, which is licensed under Apache-2.0; the
 original `LICENSE` is retained.
-
-## 中文说明
-
-本仓库从 ST-ACT 论文与现有实现中提取了动作专家的核心代码：命令历史输入、
-`z_t` 交叉注意力条件、RoPE 相对位置编码、深度可分离时序卷积平滑、命令嵌入与
-输出权重绑定，以及论文式 (9) 的边界对齐损失。运行 `python example.py` 可在随机
-张量上完成前向、损失与反向传播，并校验上述结构性质。
-
-代码不包含训练脚本、数据加载、图像编码器与机器人接口；命令归一化和 `z_t`
-的生成由调用方负责。
